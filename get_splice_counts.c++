@@ -143,6 +143,14 @@ public:
       cerr << "Found no compatible sequences in exon reference fasta file"<< endl;
       exit(1);
     }
+    //now remove edges that differ by 1 base
+    //loop over all junc_seqs
+    unordered_map<string_view,string>::iterator juncs=junc_seq.begin();
+    for(juncs!=junc_seq.end(); juncs++)
+      if( find_non_exact_match(ch junc_seq)
+
+      }
+
     sort(to_erase.begin(),to_erase.end());
     to_erase.erase(unique(to_erase.begin(),to_erase.end()),to_erase.end());
     //now loop again and remove all the black listed junctions
@@ -150,6 +158,7 @@ public:
 	 << " exon edge sequences for being non-unique" << endl;
     for(int i=0; i<to_erase.size(); i++)
       junc_seq.erase(to_erase.at(i));
+    cerr << junc_seq.size() << " edges remaining" << endl;
   };
   inline unordered_map<string_view,string>::iterator find(string_view & key){
     return junc_seq.find(key);
