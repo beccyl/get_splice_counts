@@ -9,7 +9,7 @@
 #include <unordered_set>
 #include <vector>
 #include <sstream>
-#include <experimental/string_view>
+//#include <experimental/string_view>
 #include <algorithm>
 
 #include "htslib/sam.h"
@@ -22,7 +22,7 @@
 
 //#include <gperftools/profiler.h>
 using namespace std;
-using namespace std::experimental;
+//using namespace std::experimental;
 
 static const int FLANK_SIZE=30;
 static const bool ALLOW_MISMATCH=false;
@@ -36,6 +36,9 @@ static int n_first_match=0;
 static int n_perfect_match=0;
 
 static BamReader bam_reader;
+
+class JunctionSeq;
+unordered_map<string_view,string>::iterator find_non_exact_match(string_view & orig_kmer,JunctionSeq& junc_seq);
 
 //complimenting code taken from stackoverflow
 char compliment(char& c){
@@ -134,8 +137,13 @@ public:
       bool is_type = id.find(type)!=string::npos;
       bool right_size = seq.size()==FLANK_SIZE;
       if(is_type & right_size){
-	if(junc_seq.find(seq)!=junc_seq.end())
-	  to_erase.push_back(seq);
+	unordered_map<string_view,string>::iterator match =
+	  find_non_exact_match(seq,*this);
+	if(match!=junc_seq.end()){
+	//if(junc_seq.find(seq)!=junc_seq.end())
+	  to_erase.push_back(seq); //remove edges that differ by only one.
+	  to_erase.push_back(match->first);
+	}
 	junc_seq[seq]=id;
       }
     }
@@ -143,13 +151,6 @@ public:
       cerr << "Found no compatible sequences in exon reference fasta file"<< endl;
       exit(1);
     }
-    //now remove edges that differ by 1 base
-    //loop over all junc_seqs
-    unordered_map<string_view,string>::iterator juncs=junc_seq.begin();
-    for(juncs!=junc_seq.end(); juncs++)
-      if( find_non_exact_match(ch junc_seq)
-
-      }
 
     sort(to_erase.begin(),to_erase.end());
     to_erase.erase(unique(to_erase.begin(),to_erase.end()),to_erase.end());
