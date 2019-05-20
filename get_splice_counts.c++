@@ -9,7 +9,7 @@
 #include <unordered_set>
 #include <vector>
 #include <sstream>
-//#include <experimental/string_view>
+#include <experimental/string_view>
 #include <algorithm>
 
 #include "htslib/sam.h"
@@ -22,7 +22,7 @@
 
 //#include <gperftools/profiler.h>
 using namespace std;
-//using namespace std::experimental;
+using namespace std::experimental;
 
 static const int FLANK_SIZE=30;
 static const bool ALLOW_MISMATCH=false;
@@ -137,12 +137,12 @@ public:
       bool is_type = id.find(type)!=string::npos;
       bool right_size = seq.size()==FLANK_SIZE;
       if(is_type & right_size){
-	unordered_map<string_view,string>::iterator match =
-	  find_non_exact_match(seq,*this);
-	if(match!=junc_seq.end()){
-	//if(junc_seq.find(seq)!=junc_seq.end())
+	//unordered_map<string_view,string>::iterator match =
+	//find_non_exact_match(seq,*this);
+	//if(match!=junc_seq.end()){
+	  if(junc_seq.find(seq)!=junc_seq.end()){
 	  to_erase.push_back(seq); //remove edges that differ by only one.
-	  to_erase.push_back(match->first);
+	  //to_erase.push_back(match->first);
 	}
 	junc_seq[seq]=id;
       }
