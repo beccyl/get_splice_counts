@@ -153,7 +153,7 @@ public:
       }
       //      cout << t << ":" << tally[t] << " ";
     }
-    cout << endl;
+    //    cout << endl;
     hts_itr_destroy(iter);
     return allele_count;
   }

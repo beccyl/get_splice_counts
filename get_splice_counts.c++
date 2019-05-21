@@ -54,7 +54,8 @@ char compliment(char& c){
 static class Counts {
   unordered_map< string, int > _counts;
   void print_if_interesting_junction(string name, int & read_support, 
-				     unordered_set<string> & black_list){
+				     unordered_set<string> & black_list,
+				     ofstream & ofs_fusions){
     //get positions and genes from the exon junction ids
     stringstream ss(name);    
     string field;
@@ -92,7 +93,7 @@ static class Counts {
     gene[0]==gene[1] ? event_type="BACK_SPLICE" : event_type="FUSION" ;
 
     if( (different_chrom | non_linear_order | distal ) & enough_support & not_in_black_list){
-      cout << junc_pos_formatted.str() << "\t" << read_support 
+      ofs_fusions << junc_pos_formatted.str() << "\t" << read_support 
 	   << "\t" << bam_reader.get_coverage(chrom[0],pos[0]) 
 	   << "\t" << bam_reader.get_coverage(chrom[1],pos[1])
 	   << "\t" << event_type << "\t" << strand[0] << "\t" << strand[1] << endl;
@@ -104,7 +105,7 @@ public:
     string pair = end + EXON_ID_DELIM + start;
     _counts[pair]++;
   };
-  void print_table(unordered_set<string> & black_list){
+  void print_table(unordered_set<string> & black_list, string outfile ){
     cerr << "Reporting counts..."<< endl;
     //Sort the count table by counts (highest first)
     //requires conversion to a vector
@@ -113,10 +114,12 @@ public:
 	return a.second > b.second;
       });
     vector< pair<string, int >>::iterator counts_itr=count_vec.begin();
+    ofstream ofs_fusions(outfile);
     for(;counts_itr!=count_vec.end(); counts_itr++){
       //if the event is not in the black list check if it's interesting..
-      print_if_interesting_junction(counts_itr->first,counts_itr->second,black_list);
+      print_if_interesting_junction(counts_itr->first,counts_itr->second,black_list, ofs_fusions);
     }
+    ofs_fusions.close();
   };
 
 } counts;
@@ -241,18 +244,23 @@ bool get_match(string & seq){
 }
 
 int main(int argc, char *argv[]){
-  if(!(argc==3 | argc==4)){
-    cerr << "Usage: get_non_linear_region <exon_flanking_seq.fasta> <in.bam> [black_list]" << endl;
+  if(!(argc==5 | argc==6)){
+    cerr << "Usage: get_non_linear_region <exon_flanking_seq.fasta> <SNP positions> <output prefix> <in.bam> [black_list]" << endl;
     exit(1);
   }
   string flank_fasta=argv[1];
-  string in_filename=argv[2];
+  string in_filename=argv[4];
+  string SNP_pos_file=argv[2];
+  string out_prefix=argv[3];
+  string SNPs_out_file=out_prefix+".ad";
+  string fusions_out_file=out_prefix+".fus";
+
   unordered_set<string> black_list;
-  if(argc==4){ // read the black list
+  if(argc==6){ // read the black list
     ifstream black_list_stream;
-    black_list_stream.open(argv[3]);
+    black_list_stream.open(argv[5]);
     if(!(black_list_stream.good())){ //check it opens
-      cout << "Unable to open file " << argv[3] << endl;
+      cout << "Unable to open file " << argv[5] << endl;
       exit(1);
     }
     string line;
@@ -272,7 +280,7 @@ int main(int argc, char *argv[]){
   } 
   string id="";
   string line;
-  /**while ( getline (file,line) ){
+  while ( getline (file,line) ){
     int start=line.find(">")+1;
     if(start==1){ //if this is the ID line...
         int end=line.find_first_of("\t\n ")-1;
@@ -284,13 +292,13 @@ int main(int argc, char *argv[]){
   //pass to function for junction map creation
   junc_seq_start.read_fasta(seqs,START_LABEL);
   junc_seq_end.read_fasta(seqs,END_LABEL);
-  cerr << "Done reading fasta" << endl; **/
+  cerr << "Done reading fasta" << endl;
   //ProfilerStart("prof.out");
 
   //Read the bam file (using htslib API)
   bam_reader.setFile(in_filename);  
 
-  /** int r;
+  int r;
   int i=0;
   int nread_processed=0;
   int f_count=0;
@@ -328,26 +336,31 @@ int main(int argc, char *argv[]){
 
   //print out the table of counts
   //bam_reader.setFile(in_filename);
-  counts.print_table(black_list); **/
+  counts.print_table(black_list,fusions_out_file);
 
   //Get the SNPs
   file.close();
-  file.open("../reference/SNPs.pos");
+
+  cerr << "Finished finding breaks.. getting SNP Allele Depths" << endl;
+
+  file.open(SNP_pos_file);
   if(!(file.good())){ //check it opens
     cout << "Unable to open SNP position file." << endl;
     exit(1);
   }
   string chrom;
   int pos;
+
+  ofstream ofs_SNPs(SNPs_out_file);
   while ( getline (file,line) ){
     stringstream sline(line);
     sline >> chrom;
     sline >> pos ;
     pair<int,int> adepth = bam_reader.get_allele_depth(chrom,pos);
-    cout << chrom << "\t" << pos << "\t" ;
-    cout << adepth.first << "\t" << adepth.second << endl;
+    ofs_SNPs << chrom << "\t" << pos << "\t" ;
+    ofs_SNPs << adepth.first << "\t" << adepth.second << endl;
   }
-
+  ofs_SNPs.close();
   // bam_reader.destroy();
 
 }
