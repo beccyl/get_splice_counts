@@ -23,11 +23,6 @@ class BamReader{
   int nread;
 
 public:
-  ~BamReader(){
-    bam_destroy1(b);
-    bam_hdr_destroy(header);
-    sam_close(in);
-  }
 
   void setFile(string filename){
     if((in = sam_open(filename.c_str(), "r")) == 0) {
@@ -94,5 +89,80 @@ public:
     hts_itr_destroy(iter);
     return result;
   }
+
+  pair<int, int> get_allele_depth(string & chrom, int & pos){
+    stringstream formatted_pos;
+    formatted_pos << chrom << ":" << pos << "-" << pos;
+    hts_itr_t *iter = sam_itr_querys(idx,header,formatted_pos.str().c_str());
+    if(iter==NULL) return make_pair(-1,-1);
+    int tally[4]={0};
+    while ( sam_itr_next(in, iter, b) >= 0){
+      //first work out the offset between the start of the mapped position
+      //and the SNP position
+      uint32_t map_pos=b->core.pos;
+      int diff=pos-map_pos;
+      //now get the cigar string and work out which base in the read we need
+      //to look at.
+      uint32_t *cigar = bam_get_cigar(b);
+      int read_offset=0, k=0;
+      stringstream cig;
+      while( k < b->core.n_cigar & diff>=0){
+        int c_oper=(cigar[k])&BAM_CIGAR_MASK;
+        int c_size=(cigar[k])>>BAM_CIGAR_SHIFT;
+	cig << c_size ;
+	switch(c_oper)
+	  {
+	  case BAM_CMATCH: {
+	    diff-=c_size; cig << "M" ;
+	    read_offset+=c_size;
+	    break;
+	  }
+	  case BAM_CINS:{ cig << "I" ;
+	      read_offset+=c_size; break ;}
+	  case BAM_CDEL: { cig << "D" ;
+	      diff-=c_size; break;}
+	  case BAM_CREF_SKIP: { cig << "N" ;
+	      diff-=c_size; break;}
+	  case BAM_CSOFT_CLIP: { cig << "S" ;
+	      read_offset+=c_size; break;}
+	  default:
+	    break;
+	  }
+	k++;
+      }
+      read_offset+=diff; //final adjustment
+      if(read_offset>b->core.l_qseq | read_offset<0 | diff>0)
+	continue;
+      /**      cout << "  Pos="<<pos<<" MapPos=" << map_pos ;
+      cout << " Diff="<<pos-map_pos;
+      cout << " ReadOffset="<<read_offset ;
+      cout << " ReadLength="<<b->core.l_qseq;
+      cout << " Cigar=" << cig.str();**/
+      uint8_t * seq = bam_get_seq(b); //bam1_seq(b);
+      char base = bam_seqi(seq,read_offset); //bam1_seqi(s,n);
+      tally[seq_nt16_int[base]]++;
+      //      cout << " " << seq_nt16_str[base] << endl;
+    }
+    pair<int,int> allele_count(0,0);
+    for(int t=0; t<4 ; t++){
+      if(tally[t]>allele_count.first){
+	allele_count.second=allele_count.first;
+	allele_count.first=tally[t];
+      } else if ( tally[t]>allele_count.second ){
+	allele_count.second=tally[t];
+      }
+      //      cout << t << ":" << tally[t] << " ";
+    }
+    cout << endl;
+    hts_itr_destroy(iter);
+    return allele_count;
+  }
+
+  void destroy(){
+    bam_destroy1(b);
+    bam_hdr_destroy(header);
+    sam_close(in);
+  }
+
 } ;
 

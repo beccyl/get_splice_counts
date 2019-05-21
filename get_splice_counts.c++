@@ -37,8 +37,8 @@ static int n_perfect_match=0;
 
 static BamReader bam_reader;
 
-class JunctionSeq;
-unordered_map<string_view,string>::iterator find_non_exact_match(string_view & orig_kmer,JunctionSeq& junc_seq);
+//class JunctionSeq;
+//unordered_map<string_view,string>::iterator find_non_exact_match(string_view & orig_kmer,JunctionSeq& junc_seq);
 
 //complimenting code taken from stackoverflow
 char compliment(char& c){
@@ -272,7 +272,7 @@ int main(int argc, char *argv[]){
   } 
   string id="";
   string line;
-  while ( getline (file,line) ){
+  /**while ( getline (file,line) ){
     int start=line.find(">")+1;
     if(start==1){ //if this is the ID line...
         int end=line.find_first_of("\t\n ")-1;
@@ -284,62 +284,20 @@ int main(int argc, char *argv[]){
   //pass to function for junction map creation
   junc_seq_start.read_fasta(seqs,START_LABEL);
   junc_seq_end.read_fasta(seqs,END_LABEL);
-  cerr << "Done reading fasta" << endl;
+  cerr << "Done reading fasta" << endl; **/
   //ProfilerStart("prof.out");
 
   //Read the bam file (using htslib API)
   bam_reader.setFile(in_filename);  
-  /** hts_idx_t *idx=NULL;
-  samFile *in = NULL;
-  bam1_t *b= NULL;
-  bam_hdr_t *header = NULL;**/
 
-  /**in = sam_open(in_filename.c_str(), "r");
-  if(in==NULL) return -1;
-  if ((header = sam_hdr_read(in)) == 0) return -1;
-  idx = sam_index_load(in,in_filename.c_str());
-  if(idx==NULL) return -1;
-  b = bam_init1();**/
-    /**samfile_t *in = 0 ;
-       in = samopen(in_filename.c_str(), "br", NULL);
-       if ((in==0) | (in->header == 0)) {
-       cerr << "fail to open "<< in_filename << " for reading." << endl;
-       exit(1);
-       }
-       bam1_t *b = bam_init1(); **/
-  int r;
+  /** int r;
   int i=0;
   int nread_processed=0;
   int f_count=0;
   int r_count=0;
   int nread=0;
   int unmapped=0;
-  //  while ((r = samread(in, b)) >= 0) { 
-  /**  while ((r = sam_read1(in, header, b)) >= 0){
-    nread++;
-    if( nread % 1000000 == 0 ) cerr << nread/1000000 << " million reads processed" << endl;
-    int seq_length=b->core.l_qseq;
-    uint32_t *cigar = bam_get_cigar(b); //bam1_cigar(b);
-    int matched=0;
-    int rest=0;
-    for(int k=0; k < b->core.n_cigar; k++){
-      int c_oper=(cigar[k])&BAM_CIGAR_MASK;
-      int c_size=(cigar[k])>>BAM_CIGAR_SHIFT;
-      if(c_oper==BAM_CMATCH)
-	matched+=c_size;
-      else
-	rest+=c_size;
-    }
-    if((seq_length-matched)<FLANK_SIZE && rest < MIN_GAP) continue ;
-    nread_processed++;
-    //get the read sequence
-    char qseq[seq_length];
-    uint8_t * s = bam_get_seq(b); //bam1_seq(b);
-    for(int n=0; n<seq_length; n++){
-      char v = bam_seqi(s,n); //bam1_seqi(s,n);
-      qseq[n] = seq_nt16_str[v]; //bam_nt16_rev_table[v];
-    }
-    string seq(qseq,seq_length);**/
+
   string seq;
   while((seq=bam_reader.get_next_bad_map_seq(FLANK_SIZE,MIN_GAP))!=""){
     nread_processed++;
@@ -358,11 +316,6 @@ int main(int argc, char *argv[]){
     }
     //find all matches
   }
-  //bam_destroy1(b);
-  //  samclose(in);
-  /** bam_destroy1(b);
-  bam_hdr_destroy(header);
-  sam_close(in); **/
 
   //  ProfilerStop();
 
@@ -374,7 +327,27 @@ int main(int argc, char *argv[]){
   cerr << "Unmapped=" << unmapped << endl;
 
   //print out the table of counts
-  bam_reader.setFile(in_filename);
-  counts.print_table(black_list);
+  //bam_reader.setFile(in_filename);
+  counts.print_table(black_list); **/
+
+  //Get the SNPs
+  file.close();
+  file.open("../reference/SNPs.pos");
+  if(!(file.good())){ //check it opens
+    cout << "Unable to open SNP position file." << endl;
+    exit(1);
+  }
+  string chrom;
+  int pos;
+  while ( getline (file,line) ){
+    stringstream sline(line);
+    sline >> chrom;
+    sline >> pos ;
+    pair<int,int> adepth = bam_reader.get_allele_depth(chrom,pos);
+    cout << chrom << "\t" << pos << "\t" ;
+    cout << adepth.first << "\t" << adepth.second << endl;
+  }
+
+  // bam_reader.destroy();
 
 }
