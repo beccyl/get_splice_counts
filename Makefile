@@ -6,7 +6,7 @@ HEADERS="BamReader.h"
 all: get_splice_counts
 
 get_splice_counts: get_splice_counts.c++ BamReader.h
-	g++ -g -std=c++1y -O3 $(INC) -o $@ $< $(HEADERS) $(LD) -lhts -lz -lbz2 -llzma -lprofiler -lcurl
+	g++ -g -std=c++1y -O3 $(INC) -o $@ $< $(HEADERS) $(LD) -lhts -lz -lbz2 -llzma -lcurl #-lprofiler 
 
 clean:                   
 	-rm *~ get_splice_counts

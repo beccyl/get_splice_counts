@@ -26,7 +26,7 @@ using namespace std::experimental;
 
 static const int FLANK_SIZE=30;
 static const bool ALLOW_MISMATCH=false;
-static const int MIN_GAP=200000;
+static const int MIN_GAP=100; //200000;
 static const string END_LABEL=":END";
 static const string START_LABEL=":START";
 static const char EXON_ID_DELIM=':';
@@ -82,7 +82,7 @@ static class Counts {
     bool non_linear_order = (strand[0]!=strand[1]) | 
       ( strand[0]=='+' & pos[1] < pos[0] ) |
       ( strand[0]=='-' & pos[1] > pos[0] ) ;
-    bool distal = (abs(pos[1]-pos[0])>MIN_GAP) & (gene[0]!=gene[1]);
+    bool distal = (abs(pos[1]-pos[0])>MIN_GAP); // & (gene[0]!=gene[1]);
     bool enough_support = read_support >= MIN_COUNTS;
     stringstream junc_pos_formatted;
     junc_pos_formatted << gene[0] << "\t" << chrom[0] << "\t" << pos[0] << "\t"
@@ -341,7 +341,7 @@ int main(int argc, char *argv[]){
   //Get the SNPs
   file.close();
 
-  cerr << "Finished finding breaks.. getting SNP Allele Depths" << endl;
+  /**  cerr << "Finished finding breaks.. getting SNP Allele Depths" << endl;
 
   file.open(SNP_pos_file);
   if(!(file.good())){ //check it opens
@@ -360,7 +360,7 @@ int main(int argc, char *argv[]){
     ofs_SNPs << chrom << "\t" << pos << "\t" ;
     ofs_SNPs << adepth.first << "\t" << adepth.second << endl;
   }
-  ofs_SNPs.close();
+  ofs_SNPs.close(); **/
   // bam_reader.destroy();
 
 }
