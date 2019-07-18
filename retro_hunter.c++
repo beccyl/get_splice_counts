@@ -67,12 +67,15 @@ public:
       }
 };
 
-unordered_map< string, vector < RetroJunction > > retro_results ;
+
+
 
 static class Counts {
   unordered_map< string, int > _counts;
   void get_interesting_junctions(string name, int & read_support, 
-				     unordered_set<string> & black_list){
+				 unordered_set<string> & black_list,
+				 unordered_map< string, vector < RetroJunction > > & retro_results
+				 ){
     //get positions and genes from the exon junction ids
     stringstream ss(name);
     string field;
@@ -119,12 +122,12 @@ static class Counts {
       rj.position=make_pair(pos[idx1],pos[idx2]);
       rj.read_support = read_support;
       rj.intron_coverage=make_pair(
-				   bam_reader.get_coverage(chrom[idx1],pos[idx1]+4),//FIX
-				   bam_reader.get_coverage(chrom[idx2],pos[idx2]-4)
+				   bam_reader.get_coverage(chrom[idx1],pos[idx1]+4,pos[idx1]+4),//FIX
+				   bam_reader.get_coverage(chrom[idx2],pos[idx2]-4,pos[idx2]-4)
 				   );
       rj.exon_coverage=make_pair(
-				 bam_reader.get_coverage(chrom[idx1],pos[idx1]-1),//FIX
-				 bam_reader.get_coverage(chrom[idx2],pos[idx2]+1)
+				 bam_reader.get_coverage(chrom[idx1],pos[idx1]-1,pos[idx1]-1),//FIX
+				 bam_reader.get_coverage(chrom[idx2],pos[idx2]+1,pos[idx2]+1)
 				 );
       
       retro_results[gene[0]].push_back(rj);
@@ -138,33 +141,43 @@ public:
   };
   void print_table(unordered_set<string> & black_list, string outfile ){
     cerr << "Reporting counts..."<< endl;
-    //Sort the count table by counts (highest first)
-    //requires conversion to a vector
-    vector<pair<string,int>> count_vec(_counts.begin(),_counts.end());
-    sort(count_vec.begin(), count_vec.end(), [=](pair<string, int>& a, pair<string, int>& b){
-	return a.second > b.second;
-      });
-    vector< pair<string, int >>::iterator counts_itr=count_vec.begin();
-    for(;counts_itr!=count_vec.end(); counts_itr++){
+
+    //loop through junction counts and apply some filtering
+    unordered_map<string,int>::iterator counts_itr=_counts.begin();
+    unordered_map< string, vector < RetroJunction > > retro_results ;
+    for(;counts_itr!=_counts.end(); counts_itr++){
       //if the event is not in the black list check if it's interesting..
-      get_interesting_junctions(counts_itr->first,counts_itr->second,black_list);
+      get_interesting_junctions(counts_itr->first,counts_itr->second,black_list,retro_results);
     }
     ofstream ofs(outfile);
     unordered_map< string , vector<RetroJunction> >::iterator ri;  
+
     for(ri=retro_results.begin() ; ri !=retro_results.end() ; ri++){
-      ofs << ri->first << "\t" << ri->second.size() << "\t" ;
-      //get the allele frequency
+      ofs << ri->first << "\t" ;
+      vector<RetroJunction> rj=ri->second;
+      ofs << rj.size() << "\t" ;
+      
+      //sort the junctions by genomic position
+      sort(rj.begin(), rj.end(), [=](RetroJunction& a, RetroJunction& b){
+	return a.position.first < b.position.first;
+      });      
+
+      //get coverage over introns and exons
       int intron_reads=0;
-      int exon_reads=0;
-      for(int j=0; j< ri->second.size() ; j++ ){
-	intron_reads+=ri->second.at(j).intron_coverage.first;
-	intron_reads+=ri->second.at(j).intron_coverage.second;
-	exon_reads+=ri->second.at(j).exon_coverage.first;
-	exon_reads+=ri->second.at(j).exon_coverage.second;
+      int split_reads=0;
+      for(int j=0; j< rj.size() ; j++ ){
+	intron_reads+=bam_reader.get_coverage(rj.at(j).chrom,
+					      rj.at(j).position.first+4,
+					      rj.at(j).position.second-4);
+	split_reads+=rj.at(j).read_support;
       }
-      ofs << 1-((double)intron_reads/exon_reads) << "\t" ;
-      for(int j=0; j< ri->second.size() ; j++ ){
-	ri->second.at(j).print(ofs);
+      int all_reads=bam_reader.get_coverage(rj.at(0).chrom,
+					     rj.at(0).position.first+4,
+					     rj.at(rj.size()-1).position.second-4);
+      ofs << split_reads << "\t" << intron_reads << "\t" 
+	  << all_reads-intron_reads << "\t" << bam_reader.get_nreads() << "\t" ;
+      for(int j=0; j< rj.size() ; j++ ){
+	rj.at(j).print(ofs);
 	ofs << "\t";
       }
       ofs << endl;

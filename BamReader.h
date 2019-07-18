@@ -78,10 +78,10 @@ public:
     return(b->core.flag & BAM_FUNMAP);
   };
 
-  int get_coverage(string chrom, int pos){
+  int get_coverage(string chrom, int pos1, int pos2){
     //have to do this formatting hack to get the chromosome index.
     stringstream formatted_pos;
-    formatted_pos << chrom << ":" << pos << "-" << pos;
+    formatted_pos << chrom << ":" << pos1 << "-" << pos2;
     int result=0;
     hts_itr_t *iter = sam_itr_querys(idx,header,formatted_pos.str().c_str());
     if(iter==NULL) return -1;
@@ -158,11 +158,17 @@ public:
     return allele_count;
   }
 
+  int get_nreads(){
+    return nread;
+  }
+
   void destroy(){
     bam_destroy1(b);
     bam_hdr_destroy(header);
     sam_close(in);
   }
+
+
 
 } ;
 

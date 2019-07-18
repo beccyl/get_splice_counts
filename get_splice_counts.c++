@@ -94,8 +94,8 @@ static class Counts {
 
     if( (different_chrom | non_linear_order | distal ) & enough_support & not_in_black_list){
       ofs_fusions << junc_pos_formatted.str() << "\t" << read_support 
-	   << "\t" << bam_reader.get_coverage(chrom[0],pos[0]) 
-	   << "\t" << bam_reader.get_coverage(chrom[1],pos[1])
+		  << "\t" << bam_reader.get_coverage(chrom[0],pos[0],pos[0]) 
+		  << "\t" << bam_reader.get_coverage(chrom[1],pos[1],pos[1])
 	   << "\t" << event_type << "\t" << strand[0] << "\t" << strand[1] << endl;
     }
   };
