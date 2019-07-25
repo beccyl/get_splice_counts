@@ -90,7 +90,7 @@ static class Counts {
     vector<char> strand{gene_info.at(3).at(gene_info.at(3).size()-2),
 	gene_info.at(7).at(gene_info.at(7).size()-2)}; //get the second last character
     
-    bool enough_support = (read_support >= MIN_COUNTS) && (pair_support >= MIN_COUNTS);
+    bool enough_support = (read_support + pair_support ) >= MIN_COUNTS;
     stringstream junc_pos_formatted;
     junc_pos_formatted << gene[0] << "\t" << chrom[0] << "\t" << pos[0] << "\t"
 		       << gene[1] << "\t" << chrom[1] << "\t" << pos[1] ;
@@ -173,9 +173,12 @@ public:
 
       //get coverage over introns and exons
       int total_read_support=0;
-      for(int j=0; j< rj.size() ; j++ )
-	total_read_support += rj.at(j).split_reads + rj.at(j).split_pairs ;
-      ofs << total_read_support << "\t" << bam_reader.get_nreads() << "\t" ;
+      int total_pair_support=0;
+      for(int j=0; j< rj.size() ; j++ ){
+	total_read_support += rj.at(j).split_reads ;
+	total_pair_support += rj.at(j).split_pairs ;
+      }
+      ofs << total_read_support << "\t" << total_pair_support << "\t" << bam_reader.get_nreads() << "\t" ;
 
       for(int j=0; j< rj.size() ; j++ ){
 	rj.at(j).print(ofs);
