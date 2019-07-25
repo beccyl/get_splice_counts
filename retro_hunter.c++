@@ -12,33 +12,24 @@
 #include <experimental/string_view>
 #include <algorithm>
 
-#include "htslib/sam.h"
-#include "htslib/faidx.h"
-#include "htslib/kstring.h"
-#include "htslib/khash.h"
-#include "samtools.h"
-
 #include "BamReader.h"
+#include "ReferenceReader.h"
 
 //#include <gperftools/profiler.h>
 using namespace std;
 using namespace std::experimental;
 
-static const int FLANK_SIZE=20;
 static const bool ALLOW_MISMATCH=false;
 static const int MIN_GAP=50; //200000;
-static const string END_LABEL=":END";
-static const string START_LABEL=":START";
-static const char EXON_ID_DELIM=':';
 static const int MIN_COUNTS=2;
 
 static int n_first_match=0;
 static int n_perfect_match=0;
 
 static BamReader bam_reader;
+static ReferenceReader ref_reader;
 
-//class JunctionSeq;
-//unordered_map<string_view,string>::iterator find_non_exact_match(string_view & orig_kmer,JunctionSeq& junc_seq);
+//unordered_map<string_view,string>::iterator find_non_exact_match(string_view & orig_kmer,JunctionSeq& ref_reader);
 
 //complimenting code taken from stackoverflow
 char compliment(char& c){
@@ -55,13 +46,14 @@ class RetroJunction {
 public:
   string gene;
   string chrom;
-  int read_support;
+  int split_reads;
+  int split_pairs;
   pair<int,int> position;
   pair<int,int> exon_coverage;
   pair<int,int> intron_coverage;
   void print(ofstream & ofs){
     ofs << chrom << ":" << position.first << "-" << position.second 
-	<< "," << read_support 
+	<< "," << split_reads << "," << split_pairs
 	<< "," << intron_coverage.first << "/" << exon_coverage.first 
 	<< "," << intron_coverage.second << "/" << exon_coverage.second;
       }
@@ -71,8 +63,9 @@ public:
 
 
 static class Counts {
-  unordered_map< string, int > _counts;
-  void get_interesting_junctions(string name, int & read_support, 
+  unordered_map< string, pair<int,int> > _counts;
+
+  void get_interesting_junctions(string name, int & read_support, int & pair_support, 
 				 unordered_set<string> & black_list,
 				 unordered_map< string, vector < RetroJunction > > & retro_results
 				 ){
@@ -97,21 +90,12 @@ static class Counts {
     vector<char> strand{gene_info.at(3).at(gene_info.at(3).size()-2),
 	gene_info.at(7).at(gene_info.at(7).size()-2)}; //get the second last character
     
-    //now check if the junction looks interesting
-    //bool different_chrom = chrom[0]!=chrom[1];
-    /**bool non_linear_order = (strand[0]!=strand[1]) | 
-      ( strand[0]=='+' & pos[1] < pos[0] ) |
-      ( strand[0]=='-' & pos[1] > pos[0] ) ; **/
-    //bool distal = (abs(pos[1]-pos[0])>MIN_GAP); // & (gene[0]!=gene[1]);
-    bool enough_support = read_support >= MIN_COUNTS;
+    bool enough_support = (read_support+pair_support) >= MIN_COUNTS;
     stringstream junc_pos_formatted;
     junc_pos_formatted << gene[0] << "\t" << chrom[0] << "\t" << pos[0] << "\t"
 		       << gene[1] << "\t" << chrom[1] << "\t" << pos[1] ;
     bool not_in_black_list = black_list.find(junc_pos_formatted.str())==black_list.end();
       
-    // string event_type ;
-    // gene[0]==gene[1] ? event_type="BACK_SPLICE" : event_type="FUSION" ;
-    // if the strand is negative reverse the order of exons
     int idx1=0; int idx2=1;
     if( strand[0]=='-') {idx1=1 ; idx2=0; }
 
@@ -120,7 +104,8 @@ static class Counts {
       rj.gene=gene[0];
       rj.chrom=chrom[0];
       rj.position=make_pair(pos[idx1],pos[idx2]);
-      rj.read_support = read_support;
+      rj.split_reads = read_support;
+      rj.split_pairs = pair_support;
       rj.intron_coverage=make_pair(
 				   bam_reader.get_coverage(chrom[idx1],pos[idx1]+4,pos[idx1]+4),//FIX
 				   bam_reader.get_coverage(chrom[idx2],pos[idx2]-4,pos[idx2]-4)
@@ -135,19 +120,43 @@ static class Counts {
   };
   
 public:
-  void increment(string& end,string& start){
-    string pair = end + EXON_ID_DELIM + start;
-    _counts[pair]++;
+
+  vector<string> get_gene_short_list(){
+    //return the names of all genes with junctions
+    //loop over the counts and get gene names
+    vector<string> genes;
+    unordered_map<string, pair<int,int> >::iterator counts_itr=_counts.begin();
+    for(;counts_itr!=_counts.end(); counts_itr++){
+      //if the event is not in the black list check if it's interesting..
+      size_t pos = counts_itr->first.find_first_of(EXON_ID_DELIM);
+      genes.push_back(counts_itr->first.substr(0,pos));
+    }
+    sort( genes.begin(), genes.end() );
+    genes.erase( unique( genes.begin(), genes.end() ), genes.end() );
+    return genes;
   };
+
+  void increment_split_read_count(string& end,string& start){
+    string pair = end + EXON_ID_DELIM + start;
+    _counts[pair].first++;
+  };
+
+  void increment_split_pair_count(string& pair){
+    _counts[pair].second++;
+  };
+
   void print_table(unordered_set<string> & black_list, string outfile ){
     cerr << "Reporting counts..."<< endl;
 
     //loop through junction counts and apply some filtering
-    unordered_map<string,int>::iterator counts_itr=_counts.begin();
+    unordered_map<string,pair<int,int>>::iterator counts_itr=_counts.begin();
     unordered_map< string, vector < RetroJunction > > retro_results ;
     for(;counts_itr!=_counts.end(); counts_itr++){
       //if the event is not in the black list check if it's interesting..
-      get_interesting_junctions(counts_itr->first,counts_itr->second,black_list,retro_results);
+      get_interesting_junctions(counts_itr->first,
+				counts_itr->second.first,
+				counts_itr->second.second,
+				black_list,retro_results);
     }
     ofstream ofs(outfile);
     unordered_map< string , vector<RetroJunction> >::iterator ri;  
@@ -163,19 +172,11 @@ public:
       });      
 
       //get coverage over introns and exons
-      int intron_reads=0;
-      int split_reads=0;
-      for(int j=0; j< rj.size() ; j++ ){
-	intron_reads+=bam_reader.get_coverage(rj.at(j).chrom,
-					      rj.at(j).position.first+4,
-					      rj.at(j).position.second-4);
-	split_reads+=rj.at(j).read_support;
-      }
-      int all_reads=bam_reader.get_coverage(rj.at(0).chrom,
-					     rj.at(0).position.first+4,
-					     rj.at(rj.size()-1).position.second-4);
-      ofs << split_reads << "\t" << intron_reads << "\t" 
-	  << all_reads-intron_reads << "\t" << bam_reader.get_nreads() << "\t" ;
+      int total_read_support=0;
+      for(int j=0; j< rj.size() ; j++ )
+	total_read_support += rj.at(j).split_reads + rj.at(j).split_pairs ;
+      ofs << total_read_support << "\t" << bam_reader.get_nreads() << "\t" ;
+
       for(int j=0; j< rj.size() ; j++ ){
 	rj.at(j).print(ofs);
 	ofs << "\t";
@@ -187,89 +188,23 @@ public:
 
 } counts;
 
-class JunctionSeq { //read the fasta
-  unordered_map<string_view,string > junc_seq;
-public:
-  void read_fasta( unordered_map<string,string> & _seqs, const string type){
-    //loop through the sequences and sort into start or end flanking sequence
-    //mark any duplicate sequences for later removal
-    vector<string_view> to_erase; //list of junction sequences that aren't unique.
-    unordered_map<string,string>::iterator seq_itr=_seqs.begin();
-    for(; seq_itr!=_seqs.end(); seq_itr++){
-      //if more than one junction with this sequence
-      //will need to remove later.
-      string id=seq_itr->first;
-      if(seq_itr->second.size()<FLANK_SIZE){
-	cerr << "Reference sequence too short for flank length" << endl;
-	exit(1);
-      }
-      bool is_type = id.find(type)!=string::npos;
-      /**if(is_type) && type==END_LABEL){ //trim to flank length if required
-	seq_itr->second=seq_itr->second.substr(0);//,FLANK_SIZE);
-      }
-      else if {
-	//cout << seq_itr->second.substr(0) << endl;
-	seq_itr->second=seq_itr->second.substr(0);//,FLANK_SIZE); //seq_itr->second.size()-FLANK_SIZE);
-	//	cout << seq << endl;
-	//	cout << seq.compare(seq_itr->second.substr(0)) << endl;
-	}**/
-      //bool right_size = seq.size()==FLANK_SIZE;
-      
-      if(is_type){// & right_size){
-	if(type==START_LABEL)
-	  seq_itr->second=seq_itr->second.substr(0,FLANK_SIZE);
-	else
-	  seq_itr->second=seq_itr->second.substr(seq_itr->second.size()-FLANK_SIZE);
-	string_view seq=seq_itr->second;
-	//unordered_map<string_view,string>::iterator match =
-	//find_non_exact_match(seq,*this);
-	//if(match!=junc_seq.end()){
-	  if(junc_seq.find(seq)!=junc_seq.end()){
-	  to_erase.push_back(seq); //remove edges that differ by only one.
-	  //to_erase.push_back(match->first);
-	}
-	junc_seq[seq]=id;
-      }
-    }
-    if(junc_seq.size()==0){
-      cerr << "Found no compatible sequences in exon reference fasta file"<< endl;
-      exit(1);
-    }
+//static unordered_map< string, vector < pair <int, int > > > exon_positions;
 
-    sort(to_erase.begin(),to_erase.end());
-    to_erase.erase(unique(to_erase.begin(),to_erase.end()),to_erase.end());
-    //now loop again and remove all the black listed junctions
-    cerr << "Removing " << to_erase.size() 
-	 << " exon edge sequences for being non-unique" << endl;
-    for(int i=0; i<to_erase.size(); i++)
-      junc_seq.erase(to_erase.at(i));
-    cerr << junc_seq.size() << " edges remaining" << endl;
-  };
-  inline unordered_map<string_view,string>::iterator find(string_view & key){
-    return junc_seq.find(key);
-  };
-  inline unordered_map<string_view,string>::iterator end(){
-    return junc_seq.end();
-  };
-};
-
-static JunctionSeq junc_seq_start;
-static JunctionSeq junc_seq_end;
 
 unordered_map<string_view,string>::iterator 
-find_non_exact_match(string_view & orig_kmer,JunctionSeq& junc_seq){
+find_non_exact_match(string_view & orig_kmer,string type){
   string kmer(orig_kmer);
   for(int base=0; base < FLANK_SIZE ; base++){
     vector<string> nuc{"A","G","C","T"};
     for(int n=0; n< nuc.size(); n++){
       kmer.replace(base,1,nuc.at(n));
       string_view sv_kmer=kmer;
-      unordered_map<string_view,string>::iterator match=junc_seq.find(sv_kmer);
-      if(match!=junc_seq.end())
+      unordered_map<string_view,string>::iterator match=ref_reader.find(sv_kmer,type);
+      if(match!=ref_reader.end(type))
 	return match;
     }
   }
-  return junc_seq.end();
+  return ref_reader.end(type);
 }
 
 //loop through the sequence to find a match
@@ -282,24 +217,24 @@ bool get_match(string & seq){
   //search in the forward direction
   for(int pos=0; pos < (seq.size()-FLANK_SIZE) ; pos++){
     kmer1=sv_seq.substr(pos,FLANK_SIZE);
-    end=junc_seq_end.find(kmer1);
+    end=ref_reader.find(kmer1,END_LABEL);
     //if a match is found. look for other side of the junction
-    if(end!=junc_seq_end.end()){
+    if(end!=ref_reader.end(END_LABEL)){
       n_first_match++;
       kmer2=sv_seq.substr(pos+FLANK_SIZE,FLANK_SIZE);
-      start=junc_seq_start.find(kmer2);
+      start=ref_reader.find(kmer2,START_LABEL);
       //if other end is found
-      if(start!=junc_seq_start.end()){
+      if(start!=ref_reader.end(START_LABEL)){
 	n_perfect_match++;
 	//cout << "FOUND perfect match" << endl;
-	counts.increment(end->second,start->second);
+	counts.increment_split_read_count(end->second,start->second);
 	return true;
       }
       //start not found. Try permutating the bases to account for 1 mismatch
       if(ALLOW_MISMATCH){
-	start=find_non_exact_match(kmer2,junc_seq_start);
-	if(start!=junc_seq_start.end()){
-	  counts.increment(end->second,start->second);
+	start=find_non_exact_match(kmer2,START_LABEL);
+	if(start!=ref_reader.end(START_LABEL)){
+	  counts.increment_split_read_count(end->second,start->second);
 	  return true;
 	}
       }
@@ -309,13 +244,13 @@ bool get_match(string & seq){
     //check again in reverse, permutating the end bases:
     for(int pos=seq.size()-FLANK_SIZE-1; pos >= FLANK_SIZE ; pos--){
       kmer1=sv_seq.substr(pos,FLANK_SIZE);
-      start=junc_seq_start.find(kmer1);
+      start=ref_reader.find(kmer1,START_LABEL);
       //if a match is found. look for other side of the junction
-      if(start!=junc_seq_start.end()){
+      if(start!=ref_reader.end(START_LABEL)){
 	kmer2=sv_seq.substr(pos-FLANK_SIZE,FLANK_SIZE);
-	end=find_non_exact_match(kmer2,junc_seq_end);
-	if(end!=junc_seq_end.end()){
-	  counts.increment(end->second,start->second);
+	end=find_non_exact_match(kmer2,END_LABEL);
+	if(end!=ref_reader.end(END_LABEL)){
+	  counts.increment_split_read_count(end->second,start->second);
 	  return true;
 	}
       }
@@ -368,9 +303,7 @@ int main(int argc, char *argv[]){
       seqs[id]=seqs[id]+line;
     }
   }
-  //pass to function for junction map creation
-  junc_seq_start.read_fasta(seqs,START_LABEL);
-  junc_seq_end.read_fasta(seqs,END_LABEL);
+  ref_reader.read_fasta(seqs);
   cerr << "Done reading fasta" << endl;
   //ProfilerStart("prof.out");
 
@@ -404,14 +337,32 @@ int main(int argc, char *argv[]){
     //find all matches
   }
 
-  //  ProfilerStop();
+  vector<string> genes = counts.get_gene_short_list();
+  for(int g=0; g<genes.size(); g++){
+    int start, end;
+    string chrom;
+    ref_reader.get_gene_coords(genes.at(g),chrom,start,end);
+    cout << genes.at(g) << " " << chrom << ":" << start << "-" << end << endl;
+    
+    vector< pair< int, int> > pairs=bam_reader.get_bad_pair_positions(chrom,start,end);
+    for(int i=0; i< pairs.size(); i++){
+      int jend,jstart;
+      string junc_string=ref_reader.get_closest_junction(genes.at(g), chrom, pairs.at(i).first, pairs.at(i).second);
+      if(junc_string!="")
+	counts.increment_split_pair_count(junc_string);
+      //	cout << junc_string << endl;
+    }
+  }
 
+  //  ProfilerStop();
+  /**
   cerr << "Reads Total=" << nread << endl;
   cerr << "Reads Processed=" << nread_processed << endl;
   cerr << "One match=" << n_first_match << endl;
   cerr << "Junction counts=" << f_count << "   " << r_count << endl;
   cerr << "Perfect matches=" << n_perfect_match << endl;
   cerr << "Unmapped=" << unmapped << endl;
+  **/
 
   //print out the table of counts
   //bam_reader.setFile(in_filename);

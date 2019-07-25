@@ -90,6 +90,28 @@ public:
     return result;
   }
 
+  vector< pair<int,int> >  get_bad_pair_positions(string chrom,int start,int end){
+    vector< pair<int,int> > result;
+    stringstream formatted_pos;
+    formatted_pos << chrom << ":" <<  start << "-" << end;
+    hts_itr_t *iter = sam_itr_querys(idx,header,formatted_pos.str().c_str());
+    if(iter==NULL) return result;
+    while(sam_itr_next(in, iter, b) >= 0){
+      int proper_pair = b->core.flag & BAM_FPROPER_PAIR;
+      if(!proper_pair){
+	bool diff_chrom = header->target_name[b->core.tid] != header->target_name[b->core.mtid];
+	if(!diff_chrom & (bam_is_rev(b)!=bam_is_mrev(b)) & (b->core.pos < b->core.mpos)){
+	  result.push_back( make_pair(b->core.pos+b->core.l_qseq,b->core.mpos));
+	}
+	else if(diff_chrom | bam_is_rev(b)==bam_is_mrev(b) & b->core.pos!=b->core.mpos )
+	  cout << "Non-linear: " << header->target_name[b->core.tid] << ":" << b->core.pos << "\t"
+	       << header->target_name[b->core.mtid] << ":" << b->core.mpos << endl;
+      }
+    }
+    hts_itr_destroy(iter);
+    return result;
+  }
+
   pair<int, int> get_allele_depth(string & chrom, int & pos){
     stringstream formatted_pos;
     formatted_pos << chrom << ":" << pos << "-" << pos;
