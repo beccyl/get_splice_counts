@@ -90,7 +90,7 @@ static class Counts {
     vector<char> strand{gene_info.at(3).at(gene_info.at(3).size()-2),
 	gene_info.at(7).at(gene_info.at(7).size()-2)}; //get the second last character
     
-    bool enough_support = (read_support+pair_support) >= MIN_COUNTS;
+    bool enough_support = (read_support >= MIN_COUNTS) && (pair_support >= MIN_COUNTS);
     stringstream junc_pos_formatted;
     junc_pos_formatted << gene[0] << "\t" << chrom[0] << "\t" << pos[0] << "\t"
 		       << gene[1] << "\t" << chrom[1] << "\t" << pos[1] ;
