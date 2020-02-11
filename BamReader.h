@@ -1,4 +1,6 @@
 /**
+ ** A class with utilities for reading bam files.
+ ** 
  ** Author: Nadia Davidson, nadia.davidson@mcri.edu.au
  ** Modified: 
  **/ 
@@ -6,7 +8,9 @@
 #include <string>
 #include <iostream>
 #include <sstream>
+#include <vector>
 
+//depends on samtools header files
 #include "htslib/sam.h"
 #include "htslib/faidx.h"
 #include "htslib/kstring.h"
@@ -16,7 +20,7 @@
 using namespace std;
 
 class BamReader{
-  samFile * in;
+  samFile * in; /
   bam1_t *b;
   hts_idx_t *idx; 
   bam_hdr_t *header;
@@ -98,7 +102,8 @@ public:
     if(iter==NULL) return result;
     while(sam_itr_next(in, iter, b) >= 0){
       int proper_pair = b->core.flag & BAM_FPROPER_PAIR;
-      if(!proper_pair){
+      int mate_unmapped = b->core.flag & BAM_FMUNMAP;
+      if(!proper_pair & !mate_unmapped ){
 	bool diff_chrom = header->target_name[b->core.tid] != header->target_name[b->core.mtid];
 	if(!diff_chrom & (bam_is_rev(b)!=bam_is_mrev(b)) & (b->core.pos < b->core.mpos)){
 	  result.push_back( make_pair(b->core.pos+b->core.l_qseq,b->core.mpos));

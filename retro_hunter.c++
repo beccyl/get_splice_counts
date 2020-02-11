@@ -1,6 +1,8 @@
 /**
+ ** Code to detect retrogenes in exome and genome sequencing data.
+ ** 
  ** Author: Nadia Davidson, nadia.davidson@mcri.edu.au
- ** Modified: 
+ ** Modified: 2019 
  **/ 
 
 #include <iostream>
@@ -12,10 +14,9 @@
 #include <experimental/string_view>
 #include <algorithm>
 
-#include "BamReader.h"
+#include "BamReader.h" 
 #include "ReferenceReader.h"
 
-//#include <gperftools/profiler.h>
 using namespace std;
 using namespace std::experimental;
 
@@ -29,9 +30,8 @@ static int n_perfect_match=0;
 static BamReader bam_reader;
 static ReferenceReader ref_reader;
 
-//unordered_map<string_view,string>::iterator find_non_exact_match(string_view & orig_kmer,JunctionSeq& ref_reader);
 
-//complimenting code taken from stackoverflow
+//Code that compliments a sequence (taken from stackoverflow)
 char compliment(char& c){
   switch(c){
   case 'A' : return 'T';
@@ -42,16 +42,17 @@ char compliment(char& c){
   }
 }
 
+//This class holds read number statistics for each retrogene junction
 class RetroJunction {
 public:
-  string gene;
-  string chrom;
-  int split_reads;
-  int split_pairs;
-  pair<int,int> position;
-  pair<int,int> exon_coverage;
-  pair<int,int> intron_coverage;
-  void print(ofstream & ofs){
+  string gene; //gene name
+  string chrom; // chromosomes
+  int split_reads; // number of split reads
+  int split_pairs; // number of split pairs
+  pair<int,int> position; // start and end of the splice junction
+  pair<int,int> exon_coverage; // read coverage before and after the splice junction (in exon)
+  pair<int,int> intron_coverage; // read coverage in intron just after/before splice junction
+  void print(ofstream & ofs){ //this prints the stats for each junction 
     ofs << chrom << ":" << position.first << "-" << position.second 
 	<< "," << split_reads << "," << split_pairs
 	<< "," << intron_coverage.first << "/" << exon_coverage.first 
@@ -61,7 +62,7 @@ public:
 
 
 
-
+/** This class hold information about the splice junctions that are detected **/ 
 static class Counts {
   unordered_map< string, pair<int,int> > _counts;
 
@@ -119,6 +120,7 @@ static class Counts {
     }
   };
   
+
 public:
 
   vector<string> get_gene_short_list(){
@@ -191,9 +193,9 @@ public:
 
 } counts;
 
-//static unordered_map< string, vector < pair <int, int > > > exon_positions;
 
-
+//this gets called by get_match in the case that 1 mismatch is allowed
+//it permutates one base at a time searching for a match.
 unordered_map<string_view,string>::iterator 
 find_non_exact_match(string_view & orig_kmer,string type){
   string kmer(orig_kmer);
@@ -210,46 +212,56 @@ find_non_exact_match(string_view & orig_kmer,string type){
   return ref_reader.end(type);
 }
 
+/** get_match takes a read sequence (seq) and searches for a splice junction.
+    It does this by looping through the bases of the read as checking if the following
+    sequnece matches any exon end sequence from the database. From the base following
+    the match it will search for exon start sequence.
+    string_view objects are used instead of strings so that less copying is done
+    (which should speed up the code).
+    Be aware - in the code we search for the exon end at the start of the read
+    and the end start at the end of the read. This might be a bit confusion.
+**/
+
 //loop through the sequence to find a match
 bool get_match(string & seq){
-  if(seq.size()<(2*FLANK_SIZE)) return false;
+  if(seq.size()<(2*FLANK_SIZE)) return false; //if the read it too short return.
   unordered_map<string_view,string>::iterator end; //end of exon1
   unordered_map<string_view,string>::iterator start; //joins to start of exon2
   string_view sv_seq = seq;
-  string_view kmer1,kmer2;
+  string_view kmer1,kmer2; //these hold the sliding window of sequence.
   //search in the forward direction
-  for(int pos=0; pos < (seq.size()-FLANK_SIZE) ; pos++){
-    kmer1=sv_seq.substr(pos,FLANK_SIZE);
-    end=ref_reader.find(kmer1,END_LABEL);
-    //if a match is found. look for other side of the junction
+  for(int pos=0; pos < (seq.size()-FLANK_SIZE) ; pos++){ // loop over the bases in the read
+    kmer1=sv_seq.substr(pos,FLANK_SIZE); //get a sequence of length "FLANK_SIZE" starting at base "pos"
+    end=ref_reader.find(kmer1,END_LABEL); //look for matching exon end sequence.
+    //if a match is found, look for the other side of the junction
     if(end!=ref_reader.end(END_LABEL)){
-      n_first_match++;
-      kmer2=sv_seq.substr(pos+FLANK_SIZE,FLANK_SIZE);
-      start=ref_reader.find(kmer2,START_LABEL);
+      n_first_match++; //increment counter
+      kmer2=sv_seq.substr(pos+FLANK_SIZE,FLANK_SIZE); //get the sequence of length "FLANK_SIZE" from end of the match 
+      start=ref_reader.find(kmer2,START_LABEL); //check for match to the start of an exon
       //if other end is found
       if(start!=ref_reader.end(START_LABEL)){
 	n_perfect_match++;
 	//cout << "FOUND perfect match" << endl;
-	counts.increment_split_read_count(end->second,start->second);
-	return true;
+	counts.increment_split_read_count(end->second,start->second); // increment the splice junction counter.
+	return true; //match found
       }
-      //start not found. Try permutating the bases to account for 1 mismatch
+      //start not found. Try permutating the bases to account for 1 mismatch in the exon start sequence
       if(ALLOW_MISMATCH){
-	start=find_non_exact_match(kmer2,START_LABEL);
-	if(start!=ref_reader.end(START_LABEL)){
+	start=find_non_exact_match(kmer2,START_LABEL); //find_non_exact_match defined above
+	if(start!=ref_reader.end(START_LABEL)){ // if a non-exact match is found
 	  counts.increment_split_read_count(end->second,start->second);
-	  return true;
+	  return true; //match found
 	}
       }
     }
   }
-  if(ALLOW_MISMATCH){
-    //check again in reverse, permutating the end bases:
+  if(ALLOW_MISMATCH){ //if no match found, but a mismatch is allowed trying searching again for an exon end.
+    //check again this , permutating the end bases:
     for(int pos=seq.size()-FLANK_SIZE-1; pos >= FLANK_SIZE ; pos--){
       kmer1=sv_seq.substr(pos,FLANK_SIZE);
       start=ref_reader.find(kmer1,START_LABEL);
       //if a match is found. look for other side of the junction
-      if(start!=ref_reader.end(START_LABEL)){
+      if(start!=ref_reader.end(START_LABEL)){ //in this case the start need to be a perfect match
 	kmer2=sv_seq.substr(pos-FLANK_SIZE,FLANK_SIZE);
 	end=find_non_exact_match(kmer2,END_LABEL);
 	if(end!=ref_reader.end(END_LABEL)){
@@ -259,19 +271,23 @@ bool get_match(string & seq){
       }
     }
   }
-  return false;
+  return false; //return false is no match found (ie. read does not support a splice junction).
 }
 
+
+
+/** Main function **/
 int main(int argc, char *argv[]){
-  if(!(argc==4 | argc==5)){
+  if(!(argc==4 | argc==5)){ //check the inputs
     cerr << "Usage: retro_hunter <exon_flanking_seq.fasta> <output prefix> <in.bam> [black_list]" << endl;
     exit(1);
   }
-  string flank_fasta=argv[1];
-  string in_filename=argv[3];
-  string out_prefix=argv[2];
-  string fusions_out_file=out_prefix+".ret";
+  string flank_fasta=argv[1]; //database of sequences at the start/end of exons
+  string in_filename=argv[3]; //mapped exome reads
+  string out_prefix=argv[2]; //output file prefix
+  string fusions_out_file=out_prefix+".ret"; //output filename
 
+  // if a black list file is provided
   unordered_set<string> black_list;
   if(argc==5){ // read the black list
     ifstream black_list_stream;
@@ -286,7 +302,7 @@ int main(int argc, char *argv[]){
     }
   }
   
-  //Read the fasta reference file
+  //Read the fasta reference file - uses the ReferenceReader class
   cerr << "Reading fasta file of junction sequences: " << flank_fasta << endl;
   unordered_map<string,string> seqs;
   ifstream file;
@@ -308,11 +324,11 @@ int main(int argc, char *argv[]){
   }
   ref_reader.read_fasta(seqs);
   cerr << "Done reading fasta" << endl;
-  //ProfilerStart("prof.out");
 
   //Read the bam file (using htslib API)
   bam_reader.setFile(in_filename);  
 
+  //Set a few counters to zero
   int r;
   int i=0;
   int nread_processed=0;
@@ -321,23 +337,21 @@ int main(int argc, char *argv[]){
   int nread=0;
   int unmapped=0;
 
-  string seq;
+  //Loop over through all badly mapped reads
+  string seq; //this holds a read sequence
   while((seq=bam_reader.get_next_bad_map_seq(FLANK_SIZE,MIN_GAP))!=""){
-    nread_processed++;
-    //loop through the sequence to find the first match
+    nread_processed++; //increment the number of processed reads
+    //see if anywhere in the read matches the flanking sequence of an exon end then start
     if(get_match(seq)){
-      f_count++;
-      //also check the reverse compliment if the read is unmapped.
-    } else { //if (bam_reader.is_current_read_unaligned()) {
-      //unmapped++;
+      f_count++; //increment forward strand counter
+      //also check the reverse compliment if no 'match' found
+    } else { 
       reverse(seq.begin(),seq.end());
       transform(seq.begin(),seq.end(),seq.begin(),compliment);
       if(get_match(seq)){
-	r_count++;
-	//	cout << seq << endl;
+	r_count++; //increment the counter that records the number of hits in the reverse orientation
       }
     }
-    //find all matches
   }
 
   vector<string> genes = counts.get_gene_short_list();
@@ -351,13 +365,13 @@ int main(int argc, char *argv[]){
     for(int i=0; i< pairs.size(); i++){
       int jend,jstart;
       string junc_string=ref_reader.get_closest_junction(genes.at(g), chrom, pairs.at(i).first, pairs.at(i).second);
-      if(junc_string!="")
+      if(junc_string!=""){
 	counts.increment_split_pair_count(junc_string);
-      //	cout << junc_string << endl;
+      }
     }
   }
 
-  //  ProfilerStop();
+
   /**
   cerr << "Reads Total=" << nread << endl;
   cerr << "Reads Processed=" << nread_processed << endl;
