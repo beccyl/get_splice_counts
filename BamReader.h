@@ -16,7 +16,6 @@
 #include <htslib/faidx.h>
 #include <htslib/kstring.h>
 #include <htslib/khash.h>
-#include <samtools.h>
 
 // macros adapted from samtools/stats.c 
 // From the spec

@@ -4,10 +4,10 @@ HEADERS=BamReader.h ReferenceReader.h
 all: retro_hunter
 
 retro_hunter: retro_hunter.c++ $(HEADERS)
-	g++ -std=c++17 -O3 $(CPPFLAGS) -o $@ $< $(LDFLAGS) -lz -lbz2 -llzma -lcurl -lhts -lst #-lprofiler
+	g++ -std=c++17 -O3 $(CPPFLAGS) -o $@ $< $(LDFLAGS) -lz -lbz2 -llzma -lcurl -lhts #-lst #-lprofiler
 
 get_splice_counts: get_splice_counts.c++ BamReader.h
-	g++ -std=c++17 -O3 $(CPPFLAGS) -o $@ $< $(LDFLAGS) -lz -lbz2 -llzma -lcurl -lhts -lst #-lprofiler 
+	g++ -std=c++17 -O3 $(CPPFLAGS) -o $@ $< $(LDFLAGS) -lz -lbz2 -llzma -lcurl -lhts #-lst #-lprofiler 
 
 clean:                   
 	-rm *~ get_splice_counts
